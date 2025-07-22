@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  user_shard1:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: 123
+      POSTGRES_DB: users
+    ports:
+      - "5433:5432"
+    volumes:
+      - shard1_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - shard_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d users"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  user_shard2:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: 123
+      POSTGRES_DB: users
+    ports:
+      - "5434:5432"
+    volumes:
+      - shard2_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - shard_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d users"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer
+    environment:
+      DB_USER: admin
+      DB_PASSWORD: 123
+      DB_HOST: "user_shard1,user_shard2"
+      DB_PORT: "5432,5432"
+      DB_NAME: "users,users"
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_SERVER_ROUND_ROBIN: 1 
+    ports:
+      - "6432:6432"
+    depends_on:
+      user_shard1:
+        condition: service_healthy
+      user_shard2:
+        condition: service_healthy
+    networks:
+      - shard_network
+    volumes:
+      - ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./userlist.txt:/etc/pgbouncer/userlist.txt
+
+volumes:
+  shard1_data:
+  shard2_data:
+
+networks:
+  shard_network:
+    driver: bridge
